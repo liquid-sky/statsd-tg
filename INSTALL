@@ -1,0 +1,6 @@
+Build instructions
+==================
+
+ 1. Run 'autoreconf -rvi' to prepare configuration files and dependencies
+ 2. Run './configure' to prepare Makefile
+ 3. Run 'make && make install' to build and deploy 
