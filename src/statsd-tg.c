@@ -31,12 +31,20 @@
 #include <signal.h>
 #include <errno.h>
 #include <assert.h>
-#include <time.h>
+
+/* no need to define twice 
+#include <time.h> */
+
 #include <pthread.h>
 
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netdb.h>
+
+/* because Macs rely on gettimeofday()
+Note: POSIX.1-2008 marks gettimeofday() as obsolete
+*/
+#include <sys/time.h>
 
 #if !__GNUC__
 # define __attribute__(x) /**/
@@ -300,13 +308,24 @@ static void *send_thread (void *args __attribute__((unused))) /* {{{ */
 {
   int sock;
   unsigned short seed[3];
-  struct timespec ts;
+/*  gettimeofday is uses timeval struct */ 
+    struct timeval ts;
+/*  struct timespec ts; */
 
   unsigned long long local_events_sent = 0;
 
-  clock_gettime (CLOCK_REALTIME, &ts);
+/*  clock_gettime (CLOCK_REALTIME, &ts); */
+  gettimeofday (&ts, NULL);
+
+/* 
   seed[2] = (unsigned short) (ts.tv_nsec);
   seed[1] = (unsigned short) (ts.tv_nsec >> 16);
+
+  gettimeofday has only tv_usec (milliseconds), which is of suseconds_t type and sizeof(suseconds_t) length
+*/ 
+
+  seed[2] = (unsigned short) (ts.tv_usec);
+  seed[1] = (unsigned short) (ts.tv_usec >> 8);
   seed[0] = (unsigned short) (ts.tv_sec);
 
   sock = sock_open ();
@@ -348,22 +367,34 @@ static void run_threads (void) /* {{{ */
     pthread_join (threads[i], /* retval = */ NULL);
 } /* }}} void run_threads */
 
-static double timespec_diff (struct timespec const *ts0, /* {{{ */
+/* 
+Using timeval struct instead
+static double timespec_diff (struct timespec const *ts0, {{{ 
     struct timespec const *ts1)
+*/
+static double timeval_diff (struct timeval const *ts0, /* {{{ */
+    struct timeval const *ts1)
 {
   time_t diff_sec;
-  long diff_nsec;
+/*  long diff_nsec; */
+  long diff_usec; 
 
   diff_sec = ts1->tv_sec - ts0->tv_sec;
-  diff_nsec += ts1->tv_nsec - ts0->tv_nsec;
+/*  diff_nsec += ts1->tv_nsec - ts0->tv_nsec; */
+  diff_usec += ts1->tv_usec - ts0->tv_usec;
 
-  return ((double) diff_sec) + (((double) diff_nsec) / 1.0e9);
-} /* }}} double timespec_diff */
+/*  return ((double) diff_sec) + (((double) diff_nsec) / 1.0e9); */
+  return ((double) diff_sec) + (((double) diff_usec) / 1.0e9); 
+} /* }}} double timeval_diff */
 
 int main (int argc, char **argv) /* {{{ */
 {
+/*
   struct timespec ts_begin;
   struct timespec ts_end;
+*/
+  struct timeval ts_begin;
+  struct timeval ts_end;
   double runtime;
 
   read_options (argc, argv);
@@ -374,11 +405,13 @@ int main (int argc, char **argv) /* {{{ */
   sigterm_action.sa_handler = signal_handler;
   sigaction (SIGTERM, &sigterm_action, /* old = */ NULL);
 
-  clock_gettime (CLOCK_MONOTONIC, &ts_begin);
+/*  clock_gettime (CLOCK_MONOTONIC, &ts_begin); */
+  gettimeofday (&ts_begin, NULL);
   run_threads ();
-  clock_gettime (CLOCK_MONOTONIC, &ts_end);
+/*  clock_gettime (CLOCK_MONOTONIC, &ts_end); */
+  gettimeofday (&ts_end, NULL);
 
-  runtime = timespec_diff (&ts_begin, &ts_end);
+  runtime = timeval_diff (&ts_begin, &ts_end);
   printf ("Sent %llu events in %.0fs (%.0f events/s).\n",
       events_sent, runtime, ((double) events_sent) / runtime);
 
